@@ -1,8 +1,6 @@
 name: 'Unify Repo'
 description: >
-  Copilot repo enrichment: explains codebase structure, aggregates .github
-  sub-directories to the workspace root, scaffolds comprehensive CI, improves
-  test coverage, and generates a relational integration plan.
+  Copilot repo enrichment: explains codebase, aggregates .github sub-dirs, scaffolds CI, test coverage, integration plan.
 author: 'ReZonArc'
 
 branding:
