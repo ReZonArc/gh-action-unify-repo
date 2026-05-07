@@ -1,0 +1,101 @@
+name: 'Unify Repo'
+description: >
+  Copilot repo enrichment: explains codebase structure, aggregates .github
+  sub-directories to the workspace root, scaffolds comprehensive CI, improves
+  test coverage, and generates a relational integration plan — all with zero
+  external dependencies.
+author: 'ReZonArc'
+
+branding:
+  icon: 'package'
+  color: 'blue'
+
+inputs:
+  github-token:
+    description: >
+      GitHub token used for API calls and (optionally) creating a pull request.
+      Defaults to the built-in GITHUB_TOKEN.
+    required: false
+    default: ${{ github.token }}
+
+  workspace:
+    description: >
+      Absolute path to the root of the repository to enrich.
+      Defaults to the current GitHub Actions workspace.
+    required: false
+    default: ${{ github.workspace }}
+
+  steps:
+    description: >
+      Comma-separated list of enrichment steps to execute.
+      Allowed values: explain, tests, plan
+      Default: all three steps.
+    required: false
+    default: 'explain,tests,plan'
+
+  create-pr:
+    description: >
+      When "true", commits all generated changes to a new branch and opens a
+      pull request against the repository's default branch.
+    required: false
+    default: 'true'
+
+  pr-branch:
+    description: Branch name used when create-pr is "true".
+    required: false
+    default: 'copilot/unify-repo'
+
+  commit-message:
+    description: Commit message used when create-pr is "true".
+    required: false
+    default: 'chore: apply unify-repo enrichment'
+
+  overwrite:
+    description: >
+      When "true", overwrite previously generated files (CODEBASE.md,
+      INTEGRATION_PLAN.md, ENRICHMENT_REPORT.md, generated CI workflow).
+      When "false" (default), skip files that already exist.
+    required: false
+    default: 'false'
+
+outputs:
+  report-path:
+    description: >
+      Workspace-relative path to the generated enrichment report
+      (ENRICHMENT_REPORT.md).
+    value: ${{ steps.run-enrichment.outputs.report-path }}
+
+  changes-made:
+    description: '"true" if any files were created or modified by this action.'
+    value: ${{ steps.run-enrichment.outputs.changes-made }}
+
+  pr-url:
+    description: >
+      URL of the pull request that was created (only set when create-pr is
+      "true" and a PR was actually opened).
+    value: ${{ steps.run-enrichment.outputs.pr-url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Make scripts executable
+      shell: bash
+      run: chmod +x "${{ github.action_path }}/scripts/"*.sh
+
+    - name: Run enrichment
+      id: run-enrichment
+      shell: bash
+      env:
+        GITHUB_TOKEN:    ${{ inputs.github-token }}
+        WORKSPACE:       ${{ inputs.workspace }}
+        ENRICHMENT_STEPS: ${{ inputs.steps }}
+        CREATE_PR:       ${{ inputs.create-pr }}
+        PR_BRANCH:       ${{ inputs.pr-branch }}
+        COMMIT_MESSAGE:  ${{ inputs.commit-message }}
+        OVERWRITE:       ${{ inputs.overwrite }}
+        ACTION_PATH:     ${{ github.action_path }}
+        # Context passed through for PR creation
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_SERVER_URL: ${{ github.server_url }}
+        GITHUB_REF_NAME:   ${{ github.ref_name }}
+      run: "${{ github.action_path }}/scripts/main.sh"

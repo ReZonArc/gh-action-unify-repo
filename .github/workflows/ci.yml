@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # 1. Lint all shell scripts with shellcheck
+  # ──────────────────────────────────────────────────────────────────────────
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck on scripts/
+        run: |
+          shellcheck --severity=warning scripts/*.sh
+
+      - name: Run shellcheck on tests/
+        run: |
+          shellcheck --severity=warning --exclude=SC1090,SC1091 tests/*.sh
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 2. Unit tests (pure bash, zero external dependencies)
+  # ──────────────────────────────────────────────────────────────────────────
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh tests/*.sh
+
+      - name: Run unit test suite
+        run: bash tests/run_tests.sh
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 3. Integration smoke-test: run the action against the repository itself
+  # ──────────────────────────────────────────────────────────────────────────
+  integration:
+    name: Integration smoke-test
+    runs-on: ubuntu-latest
+    needs: [shellcheck, unit-tests]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run unify-repo against this repository
+        uses: ./
+        with:
+          workspace: ${{ github.workspace }}
+          steps: 'explain,tests,plan'
+          create-pr: 'false'
+          overwrite: 'true'
+
+      - name: Verify generated artefacts exist
+        run: |
+          echo "Checking for generated files…"
+          test -f CODEBASE.md            && echo "✔ CODEBASE.md"
+          test -f INTEGRATION_PLAN.md    && echo "✔ INTEGRATION_PLAN.md"
+          test -f TEST_COVERAGE_GUIDE.md && echo "✔ TEST_COVERAGE_GUIDE.md"
+          test -f ENRICHMENT_REPORT.md   && echo "✔ ENRICHMENT_REPORT.md"
+          test -f .github/workflows/build.yml && echo "✔ .github/workflows/build.yml"
+          echo "All expected artefacts present."
+
+      - name: Upload enrichment artefacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: enrichment-output
+          path: |
+            CODEBASE.md
+            INTEGRATION_PLAN.md
+            TEST_COVERAGE_GUIDE.md
+            ENRICHMENT_REPORT.md
+            .github/workflows/build.yml
+          if-no-files-found: ignore
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 4. action.yml schema validation
+  # ──────────────────────────────────────────────────────────────────────────
+  validate-action-yml:
+    name: Validate action.yml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check action.yml is valid YAML and has required fields
+        run: |
+          python3 - <<'PYEOF'
+          import sys, pathlib
+          try:
+              import yaml
+          except ImportError:
+              import subprocess, sys
+              subprocess.check_call([sys.executable, "-m", "pip", "install", "pyyaml", "-q"])
+              import yaml
+
+          action = yaml.safe_load(pathlib.Path("action.yml").read_text())
+
+          required = ["name", "description", "runs"]
+          missing = [f for f in required if f not in action]
+          if missing:
+              print(f"ERROR: action.yml missing required fields: {missing}", file=sys.stderr)
+              sys.exit(1)
+
+          if action["runs"].get("using") != "composite":
+              print("ERROR: action.yml must use 'composite' runs", file=sys.stderr)
+              sys.exit(1)
+
+          print("action.yml is valid ✔")
+          PYEOF
